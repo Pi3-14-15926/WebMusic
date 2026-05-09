@@ -313,10 +313,32 @@ function setupAdmin() {
             });
             const data = await res.json();
             if (data.success) {
-                settingsStatus.textContent = 'WebDAV 连接成功';
-                settingsStatus.className = 'form-status success';
+                settingsStatus.textContent = '连接成功，正在扫描歌曲...';
+                settingsStatus.className = 'form-status';
                 saveSettings();
-                refreshSongs();
+                try {
+                    const syncRes = await fetch('/api/sync-webdav', { method: 'POST' });
+                    const syncData = await syncRes.json();
+                    if (syncData.success) {
+                        settingsStatus.textContent = '扫描完成，共 ' + syncData.total + ' 首歌曲';
+                        settingsStatus.className = 'form-status success';
+                    } else {
+                        settingsStatus.textContent = '扫描失败：' + (syncData.error || '未知错误');
+                        settingsStatus.className = 'form-status error';
+                    }
+                } catch (e) {
+                    settingsStatus.textContent = '扫描请求失败：' + e.message;
+                    settingsStatus.className = 'form-status error';
+                }
+                const refreshRes = await fetch('music.json?_=' + Date.now());
+                if (refreshRes.ok) {
+                    allSongs = await refreshRes.json();
+                    filteredSongs = [...allSongs];
+                    applyDefaultCoverToSongs();
+                    setupPlayer(filteredSongs);
+                    updatePlaylistUI(filteredSongs);
+                    updateSongCount();
+                }
             } else {
                 settingsStatus.textContent = '连接失败：' + (data.error || '未知错误');
                 settingsStatus.className = 'form-status error';
