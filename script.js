@@ -41,6 +41,22 @@ function init() {
         updateSongCount();
     });
     document.getElementById('refreshBtn').addEventListener('click', refreshSongs);
+
+    setInterval(async () => {
+        try {
+            const res = await fetch('music.json?_=' + Date.now());
+            if (!res.ok) return;
+            const newSongs = await res.json();
+            if (JSON.stringify(newSongs) !== JSON.stringify(allSongs)) {
+                allSongs = newSongs;
+                filteredSongs = [...allSongs];
+                applyDefaultCoverToSongs();
+                setupPlayer(filteredSongs);
+                updatePlaylistUI(filteredSongs);
+                updateSongCount();
+            }
+        } catch (_) {}
+    }, 5 * 60 * 1000);
 }
 
 function setupTheme() {
@@ -246,6 +262,7 @@ function setupAdmin() {
 
         settingsStatus.textContent = '设置已保存';
         settingsStatus.className = 'form-status';
+        refreshSongs();
         showToast('设置已保存');
     }
 
@@ -274,6 +291,41 @@ function setupAdmin() {
     if (savedSite) { try { applySiteConfig(JSON.parse(savedSite)); } catch (_) {} }
     const savedStyle = localStorage.getItem(STYLE_CONFIG_KEY);
     if (savedStyle) { try { applyStyleConfig(JSON.parse(savedStyle)); } catch (_) {} }
+
+    document.getElementById('testWebdavBtn').addEventListener('click', testWebdavConnection);
+
+    async function testWebdavConnection() {
+        const webdavUrl = document.getElementById('webdavUrl').value.trim();
+        const webdavUser = document.getElementById('webdavUser').value.trim();
+        const webdavPass = document.getElementById('webdavPass').value;
+        if (!webdavUrl || !webdavUser || !webdavPass) {
+            settingsStatus.textContent = '请先填写完整的 WebDAV 信息';
+            settingsStatus.className = 'form-status error';
+            return;
+        }
+        settingsStatus.textContent = '正在测试连接...';
+        settingsStatus.className = 'form-status';
+        try {
+            const res = await fetch('/api/test-webdav', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: webdavUrl, user: webdavUser, pass: webdavPass })
+            });
+            const data = await res.json();
+            if (data.success) {
+                settingsStatus.textContent = 'WebDAV 连接成功';
+                settingsStatus.className = 'form-status success';
+                saveSettings();
+                refreshSongs();
+            } else {
+                settingsStatus.textContent = '连接失败：' + (data.error || '未知错误');
+                settingsStatus.className = 'form-status error';
+            }
+        } catch (e) {
+            settingsStatus.textContent = '连接失败：服务端 API 不可用，请确保已启动 server.js';
+            settingsStatus.className = 'form-status error';
+        }
+    }
 
     document.getElementById('exportEncBtn').addEventListener('click', cryptoExport);
     document.getElementById('importConfigBtn').addEventListener('click', () => {

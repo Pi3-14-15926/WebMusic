@@ -38,6 +38,47 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    if (req.method === 'POST' && req.url === '/api/test-webdav') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', async () => {
+            try {
+                const { url, user, pass } = JSON.parse(body);
+                if (!url || !user || pass === undefined) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: false, error: '缺少参数' }));
+                    return;
+                }
+                const client = url.startsWith('https') ? require('https') : require('http');
+                const credentials = Buffer.from(user + ':' + pass).toString('base64');
+                const testReq = client.request(url, {
+                    method: 'OPTIONS',
+                    headers: { 'Authorization': 'Basic ' + credentials }
+                }, (testRes) => {
+                    if (testRes.statusCode === 401) {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: false, error: '用户名或密码错误' }));
+                    } else if (testRes.statusCode < 500) {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: true }));
+                    } else {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: false, error: 'HTTP ' + testRes.statusCode }));
+                    }
+                });
+                testReq.on('error', (e) => {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: false, error: e.message }));
+                });
+                testReq.end();
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: '请求格式错误' }));
+            }
+        });
+        return;
+    }
+
     let filePath = path.join(ROOT, decodeURIComponent(req.url.split('?')[0]));
     if (filePath.endsWith(path.sep) || filePath.endsWith('/')) filePath = path.join(filePath, 'index.html');
     if (!path.extname(filePath)) filePath += '.html';
