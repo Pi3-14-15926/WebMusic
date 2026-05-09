@@ -287,11 +287,23 @@ function setupAdmin() {
     });
 
     async function cryptoExport() {
-        const url = document.getElementById('webdavUrl').value.trim();
-        const user = document.getElementById('webdavUser').value.trim();
-        const pass = document.getElementById('webdavPass').value;
+        const siteConfig = {
+            favicon: document.getElementById('siteFavicon').value.trim(),
+            title: document.getElementById('siteTitle').value.trim(),
+            subtitle: document.getElementById('siteSubtitle').value.trim(),
+            footer: document.getElementById('siteFooter').value.trim()
+        };
+        const webdavConfig = {
+            url: document.getElementById('webdavUrl').value.trim(),
+            user: document.getElementById('webdavUser').value.trim(),
+            pass: document.getElementById('webdavPass').value
+        };
+        const styleConfig = {
+            defaultCover: document.getElementById('defaultCover').value.trim(),
+            accentColor: document.getElementById('accentColor').value
+        };
         const cryptoPass = document.getElementById('cryptoPass').value;
-        if (!url || !user || !pass) {
+        if (!webdavConfig.url || !webdavConfig.user || !webdavConfig.pass) {
             settingsStatus.textContent = '请先填写完整的 WebDAV 信息';
             settingsStatus.className = 'form-status error';
             return;
@@ -303,7 +315,7 @@ function setupAdmin() {
         }
         try {
             const encoder = new TextEncoder();
-            const data = encoder.encode(JSON.stringify({ url, user, pass }));
+            const data = encoder.encode(JSON.stringify(webdavConfig));
             const salt = crypto.getRandomValues(new Uint8Array(16));
             const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(cryptoPass), 'PBKDF2', false, ['deriveKey']);
             const key = await crypto.subtle.deriveKey(
@@ -325,16 +337,21 @@ function setupAdmin() {
             combined.set(tag, salt.length + iv.length + ciphertext.length);
             let binary = '';
             for (let i = 0; i < combined.length; i++) binary += String.fromCharCode(combined[i]);
-            const blob = new Blob([btoa(binary)], { type: 'application/octet-stream' });
+            const fullConfig = {
+                webdav: btoa(binary),
+                site: siteConfig,
+                style: styleConfig
+            };
+            const blob = new Blob([JSON.stringify(fullConfig, null, 2)], { type: 'application/json' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = 'webdav-config.enc';
+            a.download = 'music-config.json';
             a.click();
             URL.revokeObjectURL(a.href);
-            settingsStatus.textContent = '加密配置文件已下载 (webdav-config.enc)';
+            settingsStatus.textContent = '配置文件已下载 (music-config.json)';
             settingsStatus.className = 'form-status';
         } catch (e) {
-            settingsStatus.textContent = '加密失败: ' + e.message;
+            settingsStatus.textContent = '导出失败: ' + e.message;
             settingsStatus.className = 'form-status error';
         }
     }
@@ -342,13 +359,14 @@ function setupAdmin() {
     async function cryptoImport(file) {
         const cryptoPass = document.getElementById('cryptoPass').value;
         if (!cryptoPass) {
-            settingsStatus.textContent = '请先输入加密密码';
+            settingsStatus.textContent = '请先输入加密密码（用于解密 WebDAV 配置）';
             settingsStatus.className = 'form-status error';
             return;
         }
         try {
             const text = await file.text();
-            const binary = atob(text.replace(/\s/g, ''));
+            const fullConfig = JSON.parse(text);
+            const binary = atob(fullConfig.webdav);
             const bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
             const salt = bytes.subarray(0, 16);
@@ -368,14 +386,27 @@ function setupAdmin() {
             combined.set(ciphertext, 0);
             combined.set(tag, ciphertext.length);
             const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, combined);
-            const config = JSON.parse(new TextDecoder().decode(decrypted));
-            document.getElementById('webdavUrl').value = config.url || '';
-            document.getElementById('webdavUser').value = config.user || '';
-            document.getElementById('webdavPass').value = config.pass || '';
+            const webdavConfig = JSON.parse(new TextDecoder().decode(decrypted));
+            if (fullConfig.site) {
+                document.getElementById('siteFavicon').value = fullConfig.site.favicon || '';
+                document.getElementById('siteTitle').value = fullConfig.site.title || '';
+                document.getElementById('siteSubtitle').value = fullConfig.site.subtitle || '';
+                document.getElementById('siteFooter').value = fullConfig.site.footer || '';
+            }
+            document.getElementById('webdavUrl').value = webdavConfig.url || '';
+            document.getElementById('webdavUser').value = webdavConfig.user || '';
+            document.getElementById('webdavPass').value = webdavConfig.pass || '';
+            if (fullConfig.style) {
+                document.getElementById('defaultCover').value = fullConfig.style.defaultCover || '';
+                if (fullConfig.style.accentColor) {
+                    document.getElementById('accentColor').value = fullConfig.style.accentColor;
+                    document.getElementById('accentColorText').value = fullConfig.style.accentColor;
+                }
+            }
             settingsStatus.textContent = '配置已导入，请点击保存设置';
             settingsStatus.className = 'form-status';
         } catch (e) {
-            settingsStatus.textContent = '解密失败，请检查加密密码是否正确';
+            settingsStatus.textContent = '导入失败: ' + e.message;
             settingsStatus.className = 'form-status error';
         }
     }
