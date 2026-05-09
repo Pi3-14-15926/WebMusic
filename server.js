@@ -53,22 +53,21 @@ function webdavClient(url) {
     return url.startsWith('https') ? require('https') : require('http');
 }
 
-function authHeader(url, user, pass) {
+function authHeader(user, pass) {
     return 'Basic ' + Buffer.from(user + ':' + pass).toString('base64');
 }
 
-function webdavRequest(method, targetUrl, auth, body) {
+function webdavRequest(method, targetUrl, auth) {
     return new Promise((resolve, reject) => {
         const client = webdavClient(targetUrl);
         const opts = { method, headers: { 'Authorization': auth }, rejectUnauthorized: false };
-        if (method === 'PROPFIND') { opts.headers['Depth'] = '1'; opts.headers['Content-Type'] = 'application/xml'; }
+        if (method === 'PROPFIND') opts.headers['Depth'] = '1';
         const req = client.request(targetUrl, opts, (res) => {
             let data = '';
             res.on('data', c => data += c);
             res.on('end', () => resolve({ status: res.statusCode, data }));
         });
         req.on('error', reject);
-        if (body) req.write(body);
         req.end();
     });
 }
@@ -96,152 +95,119 @@ function parseWebdavFiles(xml) {
     return files;
 }
 
+async function getWebdavSongs() {
+    if (!webdavConfig) return null;
+    const result = await webdavRequest('PROPFIND', webdavConfig.url, webdavConfig.auth);
+    if (result.status >= 400) return null;
+    return parseWebdavFiles(result.data);
+}
+
 const server = http.createServer(async (req, res) => {
     const url = req.url;
     const method = req.method;
 
-    // POST /api/test-webdav — test + save config in memory
+    function json(data, status) {
+        res.writeHead(status || 200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(data));
+    }
+
+    // POST /api/test-webdav
     if (method === 'POST' && url === '/api/test-webdav') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
         try {
             const { url: wdUrl, user, pass } = JSON.parse(await readBody(req));
-            if (!wdUrl || !user || pass === undefined) throw new Error('缺少参数');
-            const auth = authHeader(wdUrl, user, pass);
-            const result = await webdavRequest('OPTIONS', wdUrl, auth, null);
-            if (result.status === 401) {
-                res.end(JSON.stringify({ success: false, error: '用户名或密码错误' }));
-            } else if (result.status < 500) {
-                const origin = new URL(wdUrl).origin;
-                webdavConfig = { url: wdUrl.replace(/\/+$/, '') + '/', user, pass, auth, origin };
-                fs.writeFileSync(CONFIG_FILE, JSON.stringify({ url: webdavConfig.url, user, pass }), 'utf8');
-                res.end(JSON.stringify({ success: true }));
-            } else {
-                res.end(JSON.stringify({ success: false, error: 'HTTP ' + result.status }));
-            }
-        } catch (e) {
-            res.end(JSON.stringify({ success: false, error: e.message }));
-        }
+            if (!wdUrl || !user || pass === undefined) return json({ success: false, error: '缺少参数' });
+            const auth = authHeader(user, pass);
+            const result = await webdavRequest('OPTIONS', wdUrl, auth);
+            if (result.status === 401) return json({ success: false, error: '用户名或密码错误' });
+            if (result.status >= 500) return json({ success: false, error: 'HTTP ' + result.status });
+            const origin = new URL(wdUrl).origin;
+            webdavConfig = { url: wdUrl.replace(/\/+$/, '') + '/', user, pass, auth, origin };
+            fs.writeFileSync(CONFIG_FILE, JSON.stringify({ url: webdavConfig.url, user, pass }), 'utf8');
+            json({ success: true });
+        } catch (e) { json({ success: false, error: e.message }); }
         return;
     }
 
-    // POST /api/sync-webdav — scan WebDAV, generate music.json with proxy URLs
-    if (method === 'POST' && url === '/api/sync-webdav') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
+    // GET /api/songs — return songs with proxy URLs (WebDAV) or fallback to music.json
+    if (method === 'GET' && url.startsWith('/api/songs')) {
         try {
-            if (!webdavConfig) throw new Error('请先测试 WebDAV 连接');
-            const { url: wdUrl, auth } = webdavConfig;
-            const result = await webdavRequest('PROPFIND', wdUrl, auth);
-            if (result.status >= 400) throw new Error('PROPFIND 失败: HTTP ' + result.status);
-            const songs = parseWebdavFiles(result.data);
-            fs.writeFileSync(path.join(ROOT, 'music.json'), JSON.stringify(songs, null, 2), 'utf8');
-            res.end(JSON.stringify({ success: true, total: songs.length }));
-        } catch (e) {
-            res.end(JSON.stringify({ success: false, error: e.message }));
-        }
+            if (webdavConfig) {
+                const songs = await getWebdavSongs();
+                if (songs) return json(songs);
+            }
+            const data = fs.readFileSync(path.join(ROOT, 'music.json'), 'utf8');
+            json(JSON.parse(data));
+        } catch (e) { json([]); }
         return;
     }
 
-    // GET /api/debug — show proxy config (for debugging)
+    // POST /api/regenerate — refresh song list
+    if (method === 'POST' && url === '/api/regenerate') {
+        try {
+            if (webdavConfig) {
+                const songs = await getWebdavSongs();
+                json({ ok: true, total: songs ? songs.length : 0 });
+            } else {
+                execSync('node scripts/generate-music-json.js', { cwd: ROOT, stdio: 'pipe' });
+                json({ ok: true });
+            }
+        } catch (e) { res.writeHead(500); json({ ok: false, error: e.message }); }
+        return;
+    }
+
+    // GET /api/debug
     if (method === 'GET' && url === '/api/debug') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
+        json({
             configured: !!webdavConfig,
             origin: webdavConfig ? webdavConfig.origin : null,
             url: webdavConfig ? webdavConfig.url.replace(/\/\/[^@]+@/, '//***:***@') : null
-        }));
+        });
         return;
     }
 
-    // GET /api/proxy/* — proxy audio from WebDAV (with redirect following)
+    // GET /api/proxy/* — proxy audio from WebDAV
     if (method === 'GET' && url.startsWith('/api/proxy/')) {
         const startTime = Date.now();
         try {
-            if (!webdavConfig) {
-                res.writeHead(403, { 'Content-Type': 'text/plain' }); res.end('WebDAV not configured');
-                return;
-            }
+            if (!webdavConfig) { res.writeHead(403); res.end('WebDAV not configured'); return; }
             const remotePath = decodeURIComponent(url.slice('/api/proxy/'.length));
             let targetUrl = remotePath.startsWith('http') ? remotePath : webdavConfig.origin + remotePath;
             const baseHeaders = { 'Authorization': webdavConfig.auth };
             if (req.headers.range) baseHeaders['Range'] = req.headers.range;
 
             function doFetch(fetchUrl, redirectCount) {
-                if (redirectCount > 5) {
-                    res.writeHead(502, { 'Content-Type': 'text/plain' });
-                    res.end('Too many redirects');
-                    return;
-                }
+                if (redirectCount > 5) { res.writeHead(502); res.end('Too many redirects'); return; }
                 const client = webdavClient(fetchUrl);
                 const fetchReq = client.request(fetchUrl, {
-                    method: 'GET',
-                    headers: baseHeaders,
-                    rejectUnauthorized: false
+                    method: 'GET', headers: baseHeaders, rejectUnauthorized: false
                 }, (fetchRes) => {
                     if (fetchRes.statusCode >= 300 && fetchRes.statusCode < 400 && fetchRes.headers.location) {
-                        const location = fetchRes.headers.location;
-                        const nextUrl = location.startsWith('http') ? location : new URL(location, fetchUrl).href;
-                        console.log('[PROXY] redirect', fetchRes.statusCode, '->', nextUrl);
+                        const nextUrl = fetchRes.headers.location.startsWith('http') ? fetchRes.headers.location : new URL(fetchRes.headers.location, fetchUrl).href;
                         fetchRes.resume();
-                        doFetch(nextUrl, redirectCount + 1);
-                        return;
+                        return doFetch(nextUrl, redirectCount + 1);
                     }
                     if (fetchRes.statusCode >= 400) {
                         let body = '';
                         fetchRes.on('data', c => body += c);
                         fetchRes.on('end', () => {
                             console.error('[PROXY] error', fetchRes.statusCode, fetchUrl, body.slice(0, 200));
-                            res.writeHead(502, { 'Content-Type': 'text/plain' });
-                            res.end('Proxy upstream error: ' + fetchRes.statusCode);
+                            res.writeHead(502); res.end('Proxy upstream error: ' + fetchRes.statusCode);
                         });
                         return;
                     }
                     const ext = path.extname(fetchUrl).toLowerCase();
-                    const responseHeaders = {
-                        'Content-Type': MIME[ext] || 'application/octet-stream',
-                        'Access-Control-Allow-Origin': '*',
-                        'Cache-Control': 'no-cache'
-                    };
-                    if (fetchRes.headers['content-length']) responseHeaders['Content-Length'] = fetchRes.headers['content-length'];
-                    if (fetchRes.headers['content-range']) responseHeaders['Content-Range'] = fetchRes.headers['content-range'];
-                    if (req.headers.range) responseHeaders['Accept-Ranges'] = 'bytes';
-                    console.log('[PROXY] status:', fetchRes.statusCode, 'size:', fetchRes.headers['content-length'] || 'chunked', 'time:', Date.now() - startTime + 'ms');
-                    res.writeHead(fetchRes.statusCode, responseHeaders);
+                    const h = { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
+                    if (fetchRes.headers['content-length']) h['Content-Length'] = fetchRes.headers['content-length'];
+                    if (fetchRes.headers['content-range']) h['Content-Range'] = fetchRes.headers['content-range'];
+                    if (req.headers.range) h['Accept-Ranges'] = 'bytes';
+                    res.writeHead(fetchRes.statusCode, h);
                     fetchRes.pipe(res);
                 });
-                fetchReq.on('error', (e) => {
-                    console.error('[PROXY] fetch error:', e.message);
-                    res.writeHead(502, { 'Content-Type': 'text/plain' });
-                    res.end('Proxy error: ' + e.message);
-                });
+                fetchReq.on('error', (e) => { res.writeHead(502); res.end('Proxy error: ' + e.message); });
                 fetchReq.end();
             }
-            console.log('[PROXY]', req.headers.range ? 'RANGE' : 'FULL', targetUrl);
             doFetch(targetUrl, 0);
-        } catch (e) {
-            console.error('[PROXY] handler error:', e.message);
-            res.writeHead(500, { 'Content-Type': 'text/plain' });
-            res.end('Internal proxy error');
-        }
-        return;
-    }
-
-    // POST /api/regenerate — WebDAV proxy if configured, else local scan
-    if (method === 'POST' && url === '/api/regenerate') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        try {
-            if (webdavConfig) {
-                const result = await webdavRequest('PROPFIND', webdavConfig.url, webdavConfig.auth);
-                if (result.status >= 400) throw new Error('PROPFIND 失败: HTTP ' + result.status);
-                const songs = parseWebdavFiles(result.data);
-                fs.writeFileSync(path.join(ROOT, 'music.json'), JSON.stringify(songs, null, 2), 'utf8');
-            } else {
-                execSync('node scripts/generate-music-json.js', { cwd: ROOT, stdio: 'pipe' });
-            }
-            res.end(JSON.stringify({ ok: true }));
-        } catch (e) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ ok: false, error: e.message }));
-        }
+        } catch (e) { res.writeHead(500); res.end('Proxy error: ' + e.message); }
         return;
     }
 
@@ -264,5 +230,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
-    console.log(`API: /api/test-webdav, /api/sync-webdav, /api/proxy/*, /api/regenerate`);
+    console.log('Endpoints: /api/test-webdav, /api/songs, /api/regenerate, /api/proxy/*, /api/debug');
 });

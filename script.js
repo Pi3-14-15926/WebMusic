@@ -44,7 +44,7 @@ function init() {
 
     setInterval(async () => {
         try {
-            const res = await fetch('music.json?_=' + Date.now());
+            const res = await fetch('/api/songs?_=' + Date.now());
             if (!res.ok) return;
             const newSongs = await res.json();
             if (JSON.stringify(newSongs) !== JSON.stringify(allSongs)) {
@@ -317,22 +317,14 @@ function setupAdmin() {
                 settingsStatus.className = 'form-status';
                 saveSettings();
                 try {
-                    const syncRes = await fetch('/api/sync-webdav', { method: 'POST' });
-                    const syncData = await syncRes.json();
-                    if (syncData.success) {
-                        settingsStatus.textContent = '扫描完成，共 ' + syncData.total + ' 首歌曲';
-                        settingsStatus.className = 'form-status success';
-                    } else {
-                        settingsStatus.textContent = '扫描失败：' + (syncData.error || '未知错误');
-                        settingsStatus.className = 'form-status error';
-                    }
-                } catch (e) {
-                    settingsStatus.textContent = '扫描请求失败：' + e.message;
-                    settingsStatus.className = 'form-status error';
-                }
-                const refreshRes = await fetch('music.json?_=' + Date.now());
+                    await fetch('/api/regenerate', { method: 'POST' });
+                } catch (_) {}
+                const refreshRes = await fetch('/api/songs?_=' + Date.now());
                 if (refreshRes.ok) {
-                    allSongs = await refreshRes.json();
+                    const songs = await refreshRes.json();
+                    settingsStatus.textContent = '扫描完成，共 ' + songs.length + ' 首歌曲';
+                    settingsStatus.className = 'form-status success';
+                    allSongs = songs;
                     filteredSongs = [...allSongs];
                     applyDefaultCoverToSongs();
                     setupPlayer(filteredSongs);
@@ -487,6 +479,10 @@ function setupAdmin() {
 }
 
 async function fetchMusicData() {
+    try {
+        const res = await fetch('/api/songs?_=' + Date.now());
+        if (res.ok) { allSongs = await res.json(); filteredSongs = [...allSongs]; return; }
+    } catch (_) {}
     try {
         const res = await fetch('music.json?_=' + Date.now());
         if (!res.ok) throw new Error('Failed to load music.json');
@@ -775,7 +771,7 @@ async function refreshSongs() {
         await fetch('/api/regenerate', { method: 'POST' });
     } catch (_) {}
     try {
-        const res = await fetch('music.json?_=' + Date.now());
+        const res = await fetch('/api/songs?_=' + Date.now());
         if (!res.ok) throw new Error('load failed');
         allSongs = await res.json();
         filteredSongs = [...allSongs];
