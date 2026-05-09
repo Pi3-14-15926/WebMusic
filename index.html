@@ -218,9 +218,11 @@
                             <input type="password" id="webdavPass" class="form-input" placeholder="********">
                         </div>
                         <div class="form-divider"></div>
-                        <p style="font-size:0.8rem;color:var(--text-muted);line-height:1.6">
-                            设置保存在本地浏览器。如需部署到 GitHub Pages，点击底部「导出配置」生成 <code>webdav-config.json</code> 并提交到仓库根目录。
-                        </p>
+                        <div class="form-group">
+                            <label class="form-label">加密密码（用于导出/导入配置）</label>
+                            <input type="password" id="cryptoPass" class="form-input" placeholder="设置一个加密密码">
+                            <p style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">此密码不会保存在本地，每次导入/导出时需手动输入</p>
+                        </div>
                     </div>
                     <!-- Style Settings -->
                     <div class="settings-pane" id="pane-style">
@@ -246,9 +248,11 @@
                     <div class="settings-footer">
                         <div class="form-actions">
                             <button id="saveSettingsBtn" class="form-btn primary">保存设置</button>
-                            <button id="exportConfigBtn" class="form-btn">导出配置</button>
+                            <button id="exportEncBtn" class="form-btn">导出配置</button>
+                            <button id="importConfigBtn" class="form-btn">导入配置</button>
                             <button id="lockBtn" class="form-btn danger">锁定</button>
                         </div>
+                        <input type="file" id="importFileInput" accept=".enc,.json" style="display:none">
                         <p id="settingsStatus" class="form-status"></p>
                     </div>
                 </div>

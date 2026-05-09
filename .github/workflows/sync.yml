@@ -4,13 +4,6 @@ on:
   schedule:
     - cron: '0 * * * *'
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
-    paths:
-      - '.github/workflows/sync.yml'
-      - 'webdav-config.json'
 
 jobs:
   sync:
@@ -31,20 +24,45 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y rclone
 
-      - name: Configure rclone for WebDAV
+      - name: Check WebDAV config sources
+        id: check-config
+        run: |
+          if [ -n "${{ secrets.WEBDAV_URL }}" ] && [ -n "${{ secrets.WEBDAV_USER }}" ] && [ -n "${{ secrets.WEBDAV_PASS }}" ]; then
+            echo "method=secrets" >> $GITHUB_OUTPUT
+            echo "configured=true" >> $GITHUB_OUTPUT
+          elif [ -f webdav-config.enc ] && [ -n "${{ secrets.CONFIG_PASS }}" ]; then
+            echo "method=encrypted" >> $GITHUB_OUTPUT
+            echo "configured=true" >> $GITHUB_OUTPUT
+          else
+            echo "method=none" >> $GITHUB_OUTPUT
+            echo "configured=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Decrypt config file
+        if: steps.check-config.outputs.method == 'encrypted'
+        run: |
+          CONFIG_PASS="${{ secrets.CONFIG_PASS }}" node scripts/decrypt-config.js
+
+      - name: Configure rclone for WebDAV (Secrets)
+        if: steps.check-config.outputs.method == 'secrets'
         run: |
           mkdir -p ~/.config/rclone
-          if [ -f webdav-config.json ]; then
-            echo "Using webdav-config.json"
-            URL=$(jq -r '.url' webdav-config.json)
-            USER=$(jq -r '.user' webdav-config.json)
-            PASS=$(jq -r '.pass' webdav-config.json)
-          else
-            echo "Using GitHub Secrets"
-            URL="${{ secrets.WEBDAV_URL }}"
-            USER="${{ secrets.WEBDAV_USER }}"
-            PASS="${{ secrets.WEBDAV_PASS }}"
-          fi
+          cat > ~/.config/rclone/rclone.conf << EOF
+          [webdav]
+          type = webdav
+          url = ${{ secrets.WEBDAV_URL }}
+          vendor = other
+          user = ${{ secrets.WEBDAV_USER }}
+          pass = $(rclone obscure "${{ secrets.WEBDAV_PASS }}")
+          EOF
+
+      - name: Configure rclone for WebDAV (Encrypted config)
+        if: steps.check-config.outputs.method == 'encrypted'
+        run: |
+          URL=$(node -e "console.log(require('./webdav-config.json').url)")
+          USER=$(node -e "console.log(require('./webdav-config.json').user)")
+          PASS=$(node -e "console.log(require('./webdav-config.json').pass)")
+          mkdir -p ~/.config/rclone
           cat > ~/.config/rclone/rclone.conf << EOF
           [webdav]
           type = webdav
@@ -55,6 +73,7 @@ jobs:
           EOF
 
       - name: Sync music from WebDAV
+        if: steps.check-config.outputs.configured == 'true'
         run: |
           rclone sync webdav:/ music/ \
             --progress \
@@ -65,6 +84,7 @@ jobs:
             --size-only
 
       - name: Generate music.json
+        if: steps.check-config.outputs.configured == 'true'
         run: node scripts/generate-music-json.js
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -82,3 +102,9 @@ jobs:
           git add -A
           git commit -m "chore: sync music from WebDAV [skip ci]"
           git push
+
+      - name: Skip message
+        if: steps.check-config.outputs.configured == 'false'
+        run: |
+          echo "::warning::未配置 WebDAV。请设置 Secrets (WEBDAV_URL/USER/PASS) 或提交 webdav-config.enc + 设置 CONFIG_PASS secret"
+          echo "跳过同步，等待配置完成后重新运行。"

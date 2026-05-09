@@ -275,26 +275,110 @@ function setupAdmin() {
     const savedStyle = localStorage.getItem(STYLE_CONFIG_KEY);
     if (savedStyle) { try { applyStyleConfig(JSON.parse(savedStyle)); } catch (_) {} }
 
-    document.getElementById('exportConfigBtn').addEventListener('click', () => {
-        const cfg = {
-            url: document.getElementById('webdavUrl').value.trim(),
-            user: document.getElementById('webdavUser').value.trim(),
-            pass: document.getElementById('webdavPass').value
-        };
-        if (!cfg.url || !cfg.user || !cfg.pass) {
+    document.getElementById('exportEncBtn').addEventListener('click', cryptoExport);
+    document.getElementById('importConfigBtn').addEventListener('click', () => {
+        document.getElementById('importFileInput').click();
+    });
+    document.getElementById('importFileInput').addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            cryptoImport(e.target.files[0]);
+            e.target.value = '';
+        }
+    });
+
+    async function cryptoExport() {
+        const url = document.getElementById('webdavUrl').value.trim();
+        const user = document.getElementById('webdavUser').value.trim();
+        const pass = document.getElementById('webdavPass').value;
+        const cryptoPass = document.getElementById('cryptoPass').value;
+        if (!url || !user || !pass) {
             settingsStatus.textContent = '请先填写完整的 WebDAV 信息';
             settingsStatus.className = 'form-status error';
             return;
         }
-        const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'webdav-config.json';
-        a.click();
-        URL.revokeObjectURL(a.href);
-        settingsStatus.textContent = '配置文件已下载，请提交到仓库根目录';
-        settingsStatus.className = 'form-status';
-    });
+        if (!cryptoPass) {
+            settingsStatus.textContent = '请设置加密密码';
+            settingsStatus.className = 'form-status error';
+            return;
+        }
+        try {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(JSON.stringify({ url, user, pass }));
+            const salt = crypto.getRandomValues(new Uint8Array(16));
+            const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(cryptoPass), 'PBKDF2', false, ['deriveKey']);
+            const key = await crypto.subtle.deriveKey(
+                { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+                keyMaterial,
+                { name: 'AES-GCM', length: 256 },
+                false,
+                ['encrypt']
+            );
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+            const encArray = new Uint8Array(encrypted);
+            const tag = encArray.slice(encArray.length - 16);
+            const ciphertext = encArray.slice(0, encArray.length - 16);
+            const combined = new Uint8Array(salt.length + iv.length + ciphertext.length + tag.length);
+            combined.set(salt, 0);
+            combined.set(iv, salt.length);
+            combined.set(ciphertext, salt.length + iv.length);
+            combined.set(tag, salt.length + iv.length + ciphertext.length);
+            let binary = '';
+            for (let i = 0; i < combined.length; i++) binary += String.fromCharCode(combined[i]);
+            const blob = new Blob([btoa(binary)], { type: 'application/octet-stream' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'webdav-config.enc';
+            a.click();
+            URL.revokeObjectURL(a.href);
+            settingsStatus.textContent = '加密配置文件已下载 (webdav-config.enc)';
+            settingsStatus.className = 'form-status';
+        } catch (e) {
+            settingsStatus.textContent = '加密失败: ' + e.message;
+            settingsStatus.className = 'form-status error';
+        }
+    }
+
+    async function cryptoImport(file) {
+        const cryptoPass = document.getElementById('cryptoPass').value;
+        if (!cryptoPass) {
+            settingsStatus.textContent = '请先输入加密密码';
+            settingsStatus.className = 'form-status error';
+            return;
+        }
+        try {
+            const text = await file.text();
+            const binary = atob(text.replace(/\s/g, ''));
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            const salt = bytes.subarray(0, 16);
+            const iv = bytes.subarray(16, 28);
+            const tag = bytes.subarray(bytes.length - 16);
+            const ciphertext = bytes.subarray(28, bytes.length - 16);
+            const encoder = new TextEncoder();
+            const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(cryptoPass), 'PBKDF2', false, ['deriveKey']);
+            const key = await crypto.subtle.deriveKey(
+                { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+                keyMaterial,
+                { name: 'AES-GCM', length: 256 },
+                false,
+                ['decrypt']
+            );
+            const combined = new Uint8Array(ciphertext.length + tag.length);
+            combined.set(ciphertext, 0);
+            combined.set(tag, ciphertext.length);
+            const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, combined);
+            const config = JSON.parse(new TextDecoder().decode(decrypted));
+            document.getElementById('webdavUrl').value = config.url || '';
+            document.getElementById('webdavUser').value = config.user || '';
+            document.getElementById('webdavPass').value = config.pass || '';
+            settingsStatus.textContent = '配置已导入，请点击保存设置';
+            settingsStatus.className = 'form-status';
+        } catch (e) {
+            settingsStatus.textContent = '解密失败，请检查加密密码是否正确';
+            settingsStatus.className = 'form-status error';
+        }
+    }
 }
 
 async function fetchMusicData() {
