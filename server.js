@@ -141,7 +141,7 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // POST /api/regenerate — refresh song list
+    // POST /api/regenerate — refresh song list (does NOT overwrite music.json in WebDAV mode)
     if (method === 'POST' && url === '/api/regenerate') {
         try {
             if (webdavConfig) {
@@ -151,6 +151,24 @@ const server = http.createServer(async (req, res) => {
                 execSync('node scripts/generate-music-json.js', { cwd: ROOT, stdio: 'pipe' });
                 json({ ok: true });
             }
+        } catch (e) { res.writeHead(500); json({ ok: false, error: e.message }); }
+        return;
+    }
+
+    // POST /api/regenerate-pages — generate music.json with local file URLs from WebDAV listing
+    if (method === 'POST' && url === '/api/regenerate-pages') {
+        try {
+            if (!webdavConfig) return json({ ok: false, error: '请先测试 WebDAV 连接' });
+            const songs = await getWebdavSongs();
+            if (!songs) return json({ ok: false, error: 'PROPFIND 失败' });
+            const localSongs = songs.map(s => ({
+                name: s.name,
+                artist: s.artist,
+                url: 'music/' + decodeURIComponent(s.url.replace('/api/proxy/', '')).split('/').pop(),
+                cover: s.cover
+            }));
+            fs.writeFileSync(path.join(ROOT, 'music.json'), JSON.stringify(localSongs, null, 2), 'utf8');
+            json({ ok: true, total: localSongs.length });
         } catch (e) { res.writeHead(500); json({ ok: false, error: e.message }); }
         return;
     }
