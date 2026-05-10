@@ -19,6 +19,54 @@ const ADMIN_SESSION_KEY = 'adminLoggedIn';
 const SITE_CONFIG_KEY = 'siteConfig';
 const STYLE_CONFIG_KEY = 'styleConfig';
 
+// WebDAV 读写工具（用于 GitHub Pages 环境下跨设备同步配置）
+function getWebdavAuth() {
+    try {
+        const wc = JSON.parse(localStorage.getItem(WEBDAV_KEY) || 'null');
+        if (wc && wc.url && wc.user && wc.pass) {
+            return {
+                url: wc.url.replace(/\/+$/, '') + '/',
+                auth: btoa(wc.user + ':' + wc.pass)
+            };
+        }
+    } catch (_) {}
+    return null;
+}
+
+async function webdavGet(path) {
+    const wd = getWebdavAuth();
+    if (!wd) return null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+        const res = await fetch(wd.url + path, {
+            headers: { 'Authorization': 'Basic ' + wd.auth },
+            signal: controller.signal
+        });
+        if (!res.ok) return null;
+        return res.json();
+    } finally { clearTimeout(timer); }
+}
+
+async function webdavPut(path, data) {
+    const wd = getWebdavAuth();
+    if (!wd) return false;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+        const res = await fetch(wd.url + path, {
+            method: 'PUT',
+            headers: {
+                'Authorization': 'Basic ' + wd.auth,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data),
+            signal: controller.signal
+        });
+        return res.ok;
+    } finally { clearTimeout(timer); }
+}
+
 function applyDefaultCoverToSongs() {
     try {
         const st = JSON.parse(localStorage.getItem(STYLE_CONFIG_KEY) || '{}');
@@ -66,7 +114,11 @@ function applyStyleConfig(cfg) {
 
 async function fetchServerConfig() {
     try {
-        const res = await fetch('/api/config?_=' + Date.now());
+        // 3 秒超时，避免 GitHub Pages 上无服务端时卡住
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3000);
+        const res = await fetch('/api/config?_=' + Date.now(), { signal: controller.signal });
+        clearTimeout(timer);
         if (!res.ok) return;
         const data = await res.json();
         if (data.site) {
@@ -81,10 +133,10 @@ async function fetchServerConfig() {
     } catch (_) { /* 服务端不可用，用 localStorage */ }
 }
 
-function init() {
+async function init() {
     setupTheme();
     setupAdmin();
-    // 从 site-config.js 读取静态配置（同步，部署到 GitHub Pages 后所有设备共享）
+    // 从 site-config.js 读取静态配置（同步，随代码部署的所有设备共享）
     const siteCfg = window.__SITE_CONFIG__;
     if (siteCfg) {
         if (siteCfg.style) {
@@ -96,17 +148,33 @@ function init() {
             localStorage.setItem(SITE_CONFIG_KEY, JSON.stringify(siteCfg.site));
         }
     }
-    fetchServerConfig();
-    fetchMusicData().then(() => {
-        applyDefaultCoverToSongs();
-        setupPlayer(filteredSongs);
-        setupPlayMode();
-        setupSearch();
-        setupHistory();
-        setupKeyboard();
-        updatePlaylistUI(filteredSongs);
-        updateSongCount();
-    });
+    // 从 WebDAV 拉取最新配置（GitHub Pages 环境下全设备实时共享）
+    try {
+        const wdCfg = await webdavGet('_config.json');
+        if (wdCfg) {
+            if (wdCfg.style) {
+                applyStyleConfig(wdCfg.style);
+                localStorage.setItem(STYLE_CONFIG_KEY, JSON.stringify(wdCfg.style));
+            }
+            if (wdCfg.site) {
+                applySiteConfig(wdCfg.site);
+                localStorage.setItem(SITE_CONFIG_KEY, JSON.stringify(wdCfg.site));
+            }
+        }
+    } catch (_) {}
+    // 从服务端拉取（本地运行 server.js 时生效）
+    await fetchServerConfig();
+    // 加载歌曲
+    await fetchMusicData();
+    saveRawCovers();
+    applyDefaultCoverToSongs();
+    setupPlayer(filteredSongs);
+    setupPlayMode();
+    setupSearch();
+    setupHistory();
+    setupKeyboard();
+    updatePlaylistUI(filteredSongs);
+    updateSongCount();
     document.getElementById('refreshBtn').addEventListener('click', refreshSongs);
 
     setInterval(async () => {
@@ -328,12 +396,14 @@ function setupAdmin() {
         applyDefaultCoverToSongs();
         updatePlaylistUI(filteredSongs);
 
-        // 保存到服务端，使所有用户共享配置
+        // 保存到服务端（本地运行 server.js 时生效）
         fetch('/api/save-config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ site: sc, style: st })
         }).catch(() => {});
+        // 上传到 WebDAV（GitHub Pages 环境下所有设备共享）
+        webdavPut('_config.json', { site: sc, style: st }).catch(() => {});
 
         settingsStatus.textContent = '设置已保存';
         settingsStatus.className = 'form-status';
@@ -408,115 +478,48 @@ function setupAdmin() {
     });
 
     async function cryptoExport() {
-        const siteConfig = {
-            favicon: document.getElementById('siteFavicon').value.trim(),
-            title: document.getElementById('siteTitle').value.trim(),
-            subtitle: document.getElementById('siteSubtitle').value.trim(),
-            footer: document.getElementById('siteFooter').value.trim()
+        const fullConfig = {
+            site: {
+                favicon: document.getElementById('siteFavicon').value.trim(),
+                title: document.getElementById('siteTitle').value.trim(),
+                subtitle: document.getElementById('siteSubtitle').value.trim(),
+                footer: document.getElementById('siteFooter').value.trim()
+            },
+            webdav: {
+                url: document.getElementById('webdavUrl').value.trim(),
+                user: document.getElementById('webdavUser').value.trim(),
+                pass: document.getElementById('webdavPass').value
+            },
+            style: {
+                defaultCover: document.getElementById('defaultCover').value.trim(),
+                accentColor: document.getElementById('accentColor').value
+            }
         };
-        const webdavConfig = {
-            url: document.getElementById('webdavUrl').value.trim(),
-            user: document.getElementById('webdavUser').value.trim(),
-            pass: document.getElementById('webdavPass').value
-        };
-        const styleConfig = {
-            defaultCover: document.getElementById('defaultCover').value.trim(),
-            accentColor: document.getElementById('accentColor').value
-        };
-        const cryptoPass = document.getElementById('cryptoPass').value;
-        if (!webdavConfig.url || !webdavConfig.user || !webdavConfig.pass) {
-            settingsStatus.textContent = '请先填写完整的 WebDAV 信息';
-            settingsStatus.className = 'form-status error';
-            return;
-        }
-        if (!cryptoPass) {
-            settingsStatus.textContent = '请设置加密密码';
-            settingsStatus.className = 'form-status error';
-            return;
-        }
-        try {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(JSON.stringify(webdavConfig));
-            const salt = crypto.getRandomValues(new Uint8Array(16));
-            const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(cryptoPass), 'PBKDF2', false, ['deriveKey']);
-            const key = await crypto.subtle.deriveKey(
-                { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
-                keyMaterial,
-                { name: 'AES-GCM', length: 256 },
-                false,
-                ['encrypt']
-            );
-            const iv = crypto.getRandomValues(new Uint8Array(12));
-            const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
-            const encArray = new Uint8Array(encrypted);
-            const tag = encArray.slice(encArray.length - 16);
-            const ciphertext = encArray.slice(0, encArray.length - 16);
-            const combined = new Uint8Array(salt.length + iv.length + ciphertext.length + tag.length);
-            combined.set(salt, 0);
-            combined.set(iv, salt.length);
-            combined.set(ciphertext, salt.length + iv.length);
-            combined.set(tag, salt.length + iv.length + ciphertext.length);
-            let binary = '';
-            for (let i = 0; i < combined.length; i++) binary += String.fromCharCode(combined[i]);
-            const fullConfig = {
-                webdav: btoa(binary),
-                site: siteConfig,
-                style: styleConfig
-            };
-            const blob = new Blob([JSON.stringify(fullConfig, null, 2)], { type: 'application/json' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'music-config.json';
-            a.click();
-            URL.revokeObjectURL(a.href);
-            settingsStatus.textContent = '配置文件已下载 (music-config.json)';
-            settingsStatus.className = 'form-status';
-        } catch (e) {
-            settingsStatus.textContent = '导出失败: ' + e.message;
-            settingsStatus.className = 'form-status error';
-        }
+        const blob = new Blob([JSON.stringify(fullConfig, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'music-config.json';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        settingsStatus.textContent = '配置文件已下载 (music-config.json)';
+        settingsStatus.className = 'form-status';
     }
 
     async function cryptoImport(file) {
-        const cryptoPass = document.getElementById('cryptoPass').value;
-        if (!cryptoPass) {
-            settingsStatus.textContent = '请先输入加密密码（用于解密 WebDAV 配置）';
-            settingsStatus.className = 'form-status error';
-            return;
-        }
         try {
             const text = await file.text();
             const fullConfig = JSON.parse(text);
-            const binary = atob(fullConfig.webdav);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-            const salt = bytes.subarray(0, 16);
-            const iv = bytes.subarray(16, 28);
-            const tag = bytes.subarray(bytes.length - 16);
-            const ciphertext = bytes.subarray(28, bytes.length - 16);
-            const encoder = new TextEncoder();
-            const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(cryptoPass), 'PBKDF2', false, ['deriveKey']);
-            const key = await crypto.subtle.deriveKey(
-                { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
-                keyMaterial,
-                { name: 'AES-GCM', length: 256 },
-                false,
-                ['decrypt']
-            );
-            const combined = new Uint8Array(ciphertext.length + tag.length);
-            combined.set(ciphertext, 0);
-            combined.set(tag, ciphertext.length);
-            const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, combined);
-            const webdavConfig = JSON.parse(new TextDecoder().decode(decrypted));
             if (fullConfig.site) {
                 document.getElementById('siteFavicon').value = fullConfig.site.favicon || '';
                 document.getElementById('siteTitle').value = fullConfig.site.title || '';
                 document.getElementById('siteSubtitle').value = fullConfig.site.subtitle || '';
                 document.getElementById('siteFooter').value = fullConfig.site.footer || '';
             }
-            document.getElementById('webdavUrl').value = webdavConfig.url || '';
-            document.getElementById('webdavUser').value = webdavConfig.user || '';
-            document.getElementById('webdavPass').value = webdavConfig.pass || '';
+            if (fullConfig.webdav) {
+                document.getElementById('webdavUrl').value = fullConfig.webdav.url || '';
+                document.getElementById('webdavUser').value = fullConfig.webdav.user || '';
+                document.getElementById('webdavPass').value = fullConfig.webdav.pass || '';
+            }
             if (fullConfig.style) {
                 document.getElementById('defaultCover').value = fullConfig.style.defaultCover || '';
                 if (fullConfig.style.accentColor) {
