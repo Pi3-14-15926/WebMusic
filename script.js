@@ -425,7 +425,7 @@ function setupAdmin() {
         settingsStatus.textContent = '';
     }
 
-    function saveSettings() {
+    async function saveSettings() {
         // Save music source
         const wc = {
             url: document.getElementById('webdavUrl').value.trim(),
@@ -476,9 +476,12 @@ function setupAdmin() {
             body: JSON.stringify({ site: sc, style: st })
         }).catch(() => {});
         // 保存到 GitHub 仓库（GitHub Pages 环境下全设备共享）
-        githubSaveConfig({ site: sc, style: st });
-
-        settingsStatus.textContent = '设置已保存';
+        const ghOk = await githubSaveConfig({ site: sc, style: st });
+        if (ghOk) {
+            settingsStatus.textContent = '设置已保存，已同步到 GitHub';
+        } else {
+            settingsStatus.textContent = '设置已保存（GitHub 同步失败，Token 或仓库名可能不正确）';
+        }
         settingsStatus.className = 'form-status';
         showToast('设置已保存');
     }
