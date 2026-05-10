@@ -1,6 +1,7 @@
 let ap = null;
 let allSongs = [];
 let filteredSongs = [];
+let rawSongCovers = {};  // 记录每首歌的原始封面（url -> cover），用于区分"默认封面"和"自带封面"
 let playHistory = JSON.parse(localStorage.getItem('musicPlayHistory') || '[]');
 let currentPlayIndex = -1;
 let isAdmin = false;
@@ -21,10 +22,26 @@ const STYLE_CONFIG_KEY = 'styleConfig';
 function applyDefaultCoverToSongs() {
     try {
         const st = JSON.parse(localStorage.getItem(STYLE_CONFIG_KEY) || '{}');
-        if (st.defaultCover) {
-            allSongs.forEach(s => { if (!s.cover) s.cover = st.defaultCover; });
-        }
+        applyDefaultCover(st.defaultCover);
     } catch (_) {}
+}
+
+function applyDefaultCover(coverUrl) {
+    if (!coverUrl || allSongs.length === 0) return;
+    allSongs.forEach(s => {
+        const key = s.url || s.name;
+        // 只有原始封面为空的歌曲才用默认封面
+        if (!rawSongCovers[key]) s.cover = coverUrl;
+    });
+    filteredSongs = [...allSongs];
+    updatePlaylistUI(filteredSongs);
+    if (ap) {
+        const currentIdx = ap.list.index >= 0 ? ap.list.index : 0;
+        setupPlayer(filteredSongs);
+        if (currentIdx < ap.list.audios.length) {
+            ap.list.switch(currentIdx);
+        }
+    }
 }
 
 function applySiteConfig(cfg) {
@@ -59,6 +76,7 @@ async function fetchServerConfig() {
         if (data.style) {
             applyStyleConfig(data.style);
             localStorage.setItem(STYLE_CONFIG_KEY, JSON.stringify(data.style));
+            applyDefaultCover(data.style.defaultCover);
         }
     } catch (_) { /* 服务端不可用，用 localStorage */ }
 }
@@ -87,6 +105,7 @@ function init() {
             if (JSON.stringify(newSongs) !== JSON.stringify(allSongs)) {
                 allSongs = newSongs;
                 filteredSongs = [...allSongs];
+                saveRawCovers();
                 applyDefaultCoverToSongs();
                 setupPlayer(filteredSongs);
                 updatePlaylistUI(filteredSongs);
@@ -350,6 +369,7 @@ function setupAdmin() {
                     settingsStatus.className = 'form-status success';
                     allSongs = songs;
                     filteredSongs = [...allSongs];
+                    saveRawCovers();
                     applyDefaultCoverToSongs();
                     setupPlayer(filteredSongs);
                     updatePlaylistUI(filteredSongs);
@@ -502,16 +522,22 @@ function setupAdmin() {
     }
 }
 
+function saveRawCovers() {
+    rawSongCovers = {};
+    allSongs.forEach(s => { rawSongCovers[s.url || s.name] = s.cover || ''; });
+}
+
 async function fetchMusicData() {
     try {
         const res = await fetch('/api/songs?_=' + Date.now());
-        if (res.ok) { allSongs = await res.json(); filteredSongs = [...allSongs]; return; }
+        if (res.ok) { allSongs = await res.json(); filteredSongs = [...allSongs]; saveRawCovers(); return; }
     } catch (_) {}
     try {
         const res = await fetch('music.json?_=' + Date.now());
         if (!res.ok) throw new Error('Failed to load music.json');
         allSongs = await res.json();
         filteredSongs = [...allSongs];
+        saveRawCovers();
     } catch (e) {
         console.warn('music.json not found or empty');
         allSongs = [];
@@ -799,6 +825,7 @@ async function refreshSongs() {
         if (!res.ok) throw new Error('load failed');
         allSongs = await res.json();
         filteredSongs = [...allSongs];
+        saveRawCovers();
         applyDefaultCoverToSongs();
         setupPlayer(filteredSongs);
         updatePlaylistUI(filteredSongs);
