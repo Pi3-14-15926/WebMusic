@@ -75,7 +75,7 @@ const GITHUB_CONFIG_PATH = '_live-config.json';
 async function githubSaveConfig(config) {
     const token = localStorage.getItem(GITHUB_TOKEN_KEY);
     const repo = localStorage.getItem(GITHUB_REPO_KEY);
-    if (!token || !repo) return false;
+    if (!token || !repo) { console.warn('GitHub 同步: 缺少 Token 或仓库名'); return false; }
 
     const apiUrl = `https://api.github.com/repos/${repo}/contents/${GITHUB_CONFIG_PATH}`;
     const content = btoa(unescape(encodeURIComponent(JSON.stringify(config, null, 2))));
@@ -89,6 +89,10 @@ async function githubSaveConfig(config) {
         if (getRes.ok) {
             const existing = await getRes.json();
             sha = existing.sha;
+        } else if (getRes.status !== 404) {
+            const err = await getRes.json().catch(() => ({}));
+            console.warn('GitHub 获取文件失败:', getRes.status, err.message || '');
+            return false;
         }
 
         // 提交新内容
@@ -102,8 +106,12 @@ async function githubSaveConfig(config) {
             },
             body: JSON.stringify(body)
         });
+        if (!putRes.ok) {
+            const err = await putRes.json().catch(() => ({}));
+            console.warn('GitHub 提交失败:', putRes.status, err.message || '');
+        }
         return putRes.ok;
-    } catch (_) { return false; }
+    } catch (e) { console.warn('GitHub 同步异常:', e); return false; }
 }
 
 function applyDefaultCoverToSongs() {
