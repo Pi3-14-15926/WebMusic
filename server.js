@@ -233,7 +233,10 @@ const server = http.createServer(async (req, res) => {
     // POST /api/save-config — save site + style config to server
     if (method === 'POST' && url === '/api/save-config') {
         try {
-            const body = JSON.parse(await readBody(req));
+            const raw = JSON.parse(await readBody(req));
+            // 确保 repo 字段写入 site-config.js，让 fetchGitHubConfig 不依赖 localStorage
+            const repo = raw.repo || '';
+            const body = { repo, site: raw.site, style: raw.style };
             // 保存 JSON 配置
             fs.writeFileSync(SITE_CONFIG_FILE, JSON.stringify(body, null, 2), 'utf8');
             // 生成静态 site-config.js，部署到 GitHub Pages 后所有设备共享同一份配置

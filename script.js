@@ -182,7 +182,7 @@ async function fetchServerConfig() {
 
 // 从 GitHub raw 拉取 _live-config.json（GitHub Pages 全设备共享）
 async function fetchGitHubConfig() {
-    const repo = localStorage.getItem(GITHUB_REPO_KEY);
+    const repo = localStorage.getItem(GITHUB_REPO_KEY) || (window.__SITE_CONFIG__ && window.__SITE_CONFIG__.repo);
     if (!repo) return;
     const url = `https://raw.githubusercontent.com/${repo}/main/${GITHUB_CONFIG_PATH}`;
     try {
@@ -481,7 +481,7 @@ function setupAdmin() {
         fetch('/api/save-config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ site: sc, style: st })
+            body: JSON.stringify({ site: sc, style: st, repo: ghRepo })
         }).catch(() => {});
         // 保存到 GitHub 仓库（GitHub Pages 环境下全设备共享）
         const ghOk = await githubSaveConfig({ site: sc, style: st });
