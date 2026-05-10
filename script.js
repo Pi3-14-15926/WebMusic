@@ -84,6 +84,17 @@ async function fetchServerConfig() {
 function init() {
     setupTheme();
     setupAdmin();
+    // 从 HTML 中读取服务端注入的配置（同步，无时序问题）
+    const serverCfg = window.__SERVER_CONFIG__;
+    if (serverCfg) {
+        if (serverCfg.style) {
+            applyStyleConfig(serverCfg.style);
+            localStorage.setItem(STYLE_CONFIG_KEY, JSON.stringify(serverCfg.style));
+        }
+        if (serverCfg.site) {
+            localStorage.setItem(SITE_CONFIG_KEY, JSON.stringify(serverCfg.site));
+        }
+    }
     fetchServerConfig();
     fetchMusicData().then(() => {
         applyDefaultCoverToSongs();

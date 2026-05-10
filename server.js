@@ -260,13 +260,51 @@ const server = http.createServer(async (req, res) => {
     const ext = path.extname(filePath);
     fs.readFile(filePath, (err, data) => {
         if (err) { res.writeHead(404); res.end('Not Found'); return; }
+        let content = data.toString();
+
+        // 如果是 index.html，注入服务端配置（所有设备拿到统一内容）
+        if (filePath.endsWith('index.html') && fs.existsSync(SITE_CONFIG_FILE)) {
+            try {
+                const cfg = JSON.parse(fs.readFileSync(SITE_CONFIG_FILE, 'utf8'));
+                const site = cfg.site || {};
+                const style = cfg.style || {};
+
+                // 注入动态样式和内联配置脚本
+                const accentStyle = style.accentColor
+                    ? `<style id="server-accent">:root{--accent:${style.accentColor}}</style>\n`
+                    : '';
+                const scriptBlock = `<script id="server-config">\nwindow.__SERVER_CONFIG__ = ${JSON.stringify(cfg)};\n</script>\n`;
+
+                // 替换 head 中的配置
+                if (site.title) {
+                    content = content.replace(/<title>.*?<\/title>/, `<title>${site.title}</title>`);
+                    content = content.replace(/<h1 class="site-title">.*?<\/h1>/, `<h1 class="site-title">${site.title}</h1>`);
+                }
+                if (site.subtitle) {
+                    content = content.replace(/<p class="site-subtitle">.*?<\/p>/, `<p class="site-subtitle">${site.subtitle}</p>`);
+                }
+                if (site.favicon) {
+                    content = content.replace(/<link rel="icon"[^>]*>/, `<link rel="icon" href="${site.favicon}">`);
+                }
+                if (site.footer) {
+                    content = content.replace(/<p>.*?<\/p>\s*<\/footer>/, `<p>${site.footer}</p>\n    </footer>`);
+                }
+                if (style.accentColor) {
+                    content = content.replace(/<meta name="theme-color"[^>]*>/, `<meta name="theme-color" id="themeColor" content="${style.accentColor}">`);
+                }
+
+                // 在 </head> 前注入样式和配置脚本
+                content = content.replace('</head>', accentStyle + scriptBlock + '</head>');
+            } catch (e) { /* ignore */ }
+        }
+
         res.writeHead(200, {
             'Content-Type': MIME[ext] || 'application/octet-stream',
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache', 'Expires': '0',
             'Access-Control-Allow-Origin': '*'
         });
-        res.end(data);
+        res.end(content);
     });
 });
 
