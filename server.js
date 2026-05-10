@@ -6,6 +6,7 @@ const { execSync } = require('child_process');
 const PORT = 3000;
 const ROOT = __dirname;
 const CONFIG_FILE = path.join(ROOT, 'webdav-config.json');
+const SITE_CONFIG_FILE = path.join(ROOT, 'site-config.json');
 
 let webdavConfig = null;
 if (fs.existsSync(CONFIG_FILE)) {
@@ -229,6 +230,29 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // POST /api/save-config — save site + style config to server
+    if (method === 'POST' && url === '/api/save-config') {
+        try {
+            const body = JSON.parse(await readBody(req));
+            fs.writeFileSync(SITE_CONFIG_FILE, JSON.stringify(body, null, 2), 'utf8');
+            json({ success: true });
+        } catch (e) { json({ success: false, error: e.message }, 500); }
+        return;
+    }
+
+    // GET /api/config — return saved site + style config
+    if (method === 'GET' && url === '/api/config') {
+        try {
+            if (fs.existsSync(SITE_CONFIG_FILE)) {
+                const data = JSON.parse(fs.readFileSync(SITE_CONFIG_FILE, 'utf8'));
+                json(data);
+            } else {
+                json({});
+            }
+        } catch (e) { json({}, 500); }
+        return;
+    }
+
     // Static files
     let filePath = path.join(ROOT, decodeURIComponent(url.split('?')[0]));
     if (filePath.endsWith(path.sep) || filePath.endsWith('/')) filePath = path.join(filePath, 'index.html');
@@ -248,5 +272,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
-    console.log('Endpoints: /api/test-webdav, /api/songs, /api/regenerate, /api/proxy/*, /api/debug');
+    console.log('Endpoints: /api/test-webdav, /api/songs, /api/regenerate, /api/proxy/*, /api/debug, /api/config, /api/save-config');
 });

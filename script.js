@@ -27,9 +27,46 @@ function applyDefaultCoverToSongs() {
     } catch (_) {}
 }
 
+function applySiteConfig(cfg) {
+    const titleEl = document.querySelector('.site-title');
+    const subtitleEl = document.querySelector('.site-subtitle');
+    const favicon = document.querySelector('link[rel="icon"]');
+    const docTitle = document.querySelector('title');
+    const footerEl = document.querySelector('.footer p');
+    if (cfg.title && titleEl) titleEl.textContent = cfg.title;
+    if (cfg.subtitle && subtitleEl) subtitleEl.textContent = cfg.subtitle;
+    if (cfg.favicon && favicon) favicon.href = cfg.favicon;
+    if (cfg.title && docTitle) docTitle.textContent = cfg.title;
+    if (cfg.footer && footerEl) footerEl.textContent = cfg.footer;
+}
+
+function applyStyleConfig(cfg) {
+    if (cfg.accentColor) {
+        document.documentElement.style.setProperty('--accent', cfg.accentColor);
+        if (ap) ap.theme = cfg.accentColor;
+    }
+}
+
+async function fetchServerConfig() {
+    try {
+        const res = await fetch('/api/config?_=' + Date.now());
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.site) {
+            applySiteConfig(data.site);
+            localStorage.setItem(SITE_CONFIG_KEY, JSON.stringify(data.site));
+        }
+        if (data.style) {
+            applyStyleConfig(data.style);
+            localStorage.setItem(STYLE_CONFIG_KEY, JSON.stringify(data.style));
+        }
+    } catch (_) { /* 服务端不可用，用 localStorage */ }
+}
+
 function init() {
     setupTheme();
     setupAdmin();
+    fetchServerConfig();
     fetchMusicData().then(() => {
         applyDefaultCoverToSongs();
         setupPlayer(filteredSongs);
@@ -260,30 +297,17 @@ function setupAdmin() {
         applyDefaultCoverToSongs();
         updatePlaylistUI(filteredSongs);
 
+        // 保存到服务端，使所有用户共享配置
+        fetch('/api/save-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ site: sc, style: st })
+        }).catch(() => {});
+
         settingsStatus.textContent = '设置已保存';
         settingsStatus.className = 'form-status';
         refreshSongs();
         showToast('设置已保存');
-    }
-
-    function applySiteConfig(cfg) {
-        const titleEl = document.querySelector('.site-title');
-        const subtitleEl = document.querySelector('.site-subtitle');
-        const favicon = document.querySelector('link[rel="icon"]');
-        const docTitle = document.querySelector('title');
-        const footerEl = document.querySelector('.footer p');
-        if (cfg.title && titleEl) titleEl.textContent = cfg.title;
-        if (cfg.subtitle && subtitleEl) subtitleEl.textContent = cfg.subtitle;
-        if (cfg.favicon && favicon) favicon.href = cfg.favicon;
-        if (cfg.title && docTitle) docTitle.textContent = cfg.title;
-        if (cfg.footer && footerEl) footerEl.textContent = cfg.footer;
-    }
-
-    function applyStyleConfig(cfg) {
-        if (cfg.accentColor) {
-            document.documentElement.style.setProperty('--accent', cfg.accentColor);
-            if (ap) ap.theme = cfg.accentColor;
-        }
     }
 
     // Apply saved config on load
