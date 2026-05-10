@@ -92,6 +92,7 @@ function init() {
             localStorage.setItem(STYLE_CONFIG_KEY, JSON.stringify(serverCfg.style));
         }
         if (serverCfg.site) {
+            applySiteConfig(serverCfg.site);
             localStorage.setItem(SITE_CONFIG_KEY, JSON.stringify(serverCfg.site));
         }
     }
@@ -336,7 +337,6 @@ function setupAdmin() {
 
         settingsStatus.textContent = '设置已保存';
         settingsStatus.className = 'form-status';
-        refreshSongs();
         showToast('设置已保存');
     }
 
