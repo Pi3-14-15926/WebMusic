@@ -84,16 +84,16 @@ async function fetchServerConfig() {
 function init() {
     setupTheme();
     setupAdmin();
-    // 从 HTML 中读取服务端注入的配置（同步，无时序问题）
-    const serverCfg = window.__SERVER_CONFIG__;
-    if (serverCfg) {
-        if (serverCfg.style) {
-            applyStyleConfig(serverCfg.style);
-            localStorage.setItem(STYLE_CONFIG_KEY, JSON.stringify(serverCfg.style));
+    // 从 site-config.js 读取静态配置（同步，部署到 GitHub Pages 后所有设备共享）
+    const siteCfg = window.__SITE_CONFIG__;
+    if (siteCfg) {
+        if (siteCfg.style) {
+            applyStyleConfig(siteCfg.style);
+            localStorage.setItem(STYLE_CONFIG_KEY, JSON.stringify(siteCfg.style));
         }
-        if (serverCfg.site) {
-            applySiteConfig(serverCfg.site);
-            localStorage.setItem(SITE_CONFIG_KEY, JSON.stringify(serverCfg.site));
+        if (siteCfg.site) {
+            applySiteConfig(siteCfg.site);
+            localStorage.setItem(SITE_CONFIG_KEY, JSON.stringify(siteCfg.site));
         }
     }
     fetchServerConfig();

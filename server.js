@@ -234,7 +234,11 @@ const server = http.createServer(async (req, res) => {
     if (method === 'POST' && url === '/api/save-config') {
         try {
             const body = JSON.parse(await readBody(req));
+            // 保存 JSON 配置
             fs.writeFileSync(SITE_CONFIG_FILE, JSON.stringify(body, null, 2), 'utf8');
+            // 生成静态 site-config.js，部署到 GitHub Pages 后所有设备共享同一份配置
+            const jsContent = '// 此文件由管理员保存设置时自动生成\nwindow.__SITE_CONFIG__ = ' + JSON.stringify(body) + ';\n';
+            fs.writeFileSync(path.join(ROOT, 'site-config.js'), jsContent, 'utf8');
             json({ success: true });
         } catch (e) { json({ success: false, error: e.message }, 500); }
         return;
@@ -269,13 +273,12 @@ const server = http.createServer(async (req, res) => {
                 const site = cfg.site || {};
                 const style = cfg.style || {};
 
-                // 注入动态样式和内联配置脚本
+                // 注入动态样式（防止 FOUC，在 CSS 加载前就生效）
                 const accentStyle = style.accentColor
                     ? `<style id="server-accent">:root{--accent:${style.accentColor}}</style>\n`
                     : '';
-                const scriptBlock = `<script id="server-config">\nwindow.__SERVER_CONFIG__ = ${JSON.stringify(cfg)};\n</script>\n`;
 
-                // 替换 head 中的配置
+                // 替换 head 中的配置（让 HTML 本身包含正确的值）
                 if (site.title) {
                     content = content.replace(/<title>.*?<\/title>/, `<title>${site.title}</title>`);
                     content = content.replace(/<h1 class="site-title">.*?<\/h1>/, `<h1 class="site-title">${site.title}</h1>`);
@@ -293,8 +296,10 @@ const server = http.createServer(async (req, res) => {
                     content = content.replace(/<meta name="theme-color"[^>]*>/, `<meta name="theme-color" id="themeColor" content="${style.accentColor}">`);
                 }
 
-                // 在 </head> 前注入样式和配置脚本
-                content = content.replace('</head>', accentStyle + scriptBlock + '</head>');
+                // 在 </head> 前注入样式
+                if (accentStyle) {
+                    content = content.replace('</head>', accentStyle + '</head>');
+                }
             } catch (e) { /* ignore */ }
         }
 
