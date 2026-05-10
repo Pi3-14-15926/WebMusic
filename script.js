@@ -478,31 +478,41 @@ function setupAdmin() {
     });
 
     async function cryptoExport() {
-        const fullConfig = {
-            site: {
-                favicon: document.getElementById('siteFavicon').value.trim(),
-                title: document.getElementById('siteTitle').value.trim(),
-                subtitle: document.getElementById('siteSubtitle').value.trim(),
-                footer: document.getElementById('siteFooter').value.trim()
-            },
-            webdav: {
-                url: document.getElementById('webdavUrl').value.trim(),
-                user: document.getElementById('webdavUser').value.trim(),
-                pass: document.getElementById('webdavPass').value
-            },
-            style: {
-                defaultCover: document.getElementById('defaultCover').value.trim(),
-                accentColor: document.getElementById('accentColor').value
+        try {
+            const val = id => (document.getElementById(id) || {}).value || '';
+            const fullConfig = {
+                site: {
+                    favicon: val('siteFavicon'),
+                    title: val('siteTitle'),
+                    subtitle: val('siteSubtitle'),
+                    footer: val('siteFooter')
+                },
+                webdav: {
+                    url: val('webdavUrl'),
+                    user: val('webdavUser'),
+                    pass: val('webdavPass')
+                },
+                style: {
+                    defaultCover: val('defaultCover'),
+                    accentColor: val('accentColor')
+                }
+            };
+            const blob = new Blob([JSON.stringify(fullConfig, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'music-config.json';
+            a.click();
+            URL.revokeObjectURL(a.href);
+            if (settingsStatus) {
+                settingsStatus.textContent = '配置文件已下载 (music-config.json)';
+                settingsStatus.className = 'form-status';
             }
-        };
-        const blob = new Blob([JSON.stringify(fullConfig, null, 2)], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'music-config.json';
-        a.click();
-        URL.revokeObjectURL(a.href);
-        settingsStatus.textContent = '配置文件已下载 (music-config.json)';
-        settingsStatus.className = 'form-status';
+        } catch (e) {
+            if (settingsStatus) {
+                settingsStatus.textContent = '导出失败: ' + e.message;
+                settingsStatus.className = 'form-status error';
+            }
+        }
     }
 
     async function cryptoImport(file) {
