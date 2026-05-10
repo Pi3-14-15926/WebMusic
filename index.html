@@ -239,6 +239,16 @@
                             <label class="form-label">修改管理员密码</label>
                             <input type="password" id="adminNewPassword" class="form-input" placeholder="留空则不修改">
                         </div>
+                        <div class="form-divider"></div>
+                        <div class="form-group">
+                            <label class="form-label">GitHub Token（用于网页后台直接保存配置到仓库）</label>
+                            <input type="password" id="githubToken" class="form-input" placeholder="ghp_xxxxxxxxxxxx">
+                            <p style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">在 GitHub Settings → Developer settings → Personal access tokens → Tokens (classic) 创建，勾选 repo 权限</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">仓库名（owner/repo）</label>
+                            <input type="text" id="githubRepo" class="form-input" placeholder="用户名/仓库名">
+                        </div>
                     </div>
                     <div class="settings-footer">
                         <div class="form-actions">

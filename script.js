@@ -18,6 +18,8 @@ const WEBDAV_KEY = 'webdavConfig';
 const ADMIN_SESSION_KEY = 'adminLoggedIn';
 const SITE_CONFIG_KEY = 'siteConfig';
 const STYLE_CONFIG_KEY = 'styleConfig';
+const GITHUB_TOKEN_KEY = 'githubToken';
+const GITHUB_REPO_KEY = 'githubRepo';
 
 // WebDAV 读写工具（用于 GitHub Pages 环境下跨设备同步配置）
 function getWebdavAuth() {
@@ -65,6 +67,43 @@ async function webdavPut(path, data) {
         });
         return res.ok;
     } finally { clearTimeout(timer); }
+}
+
+// GitHub API：保存配置到仓库（GitHub Pages 环境下跨设备共享）
+const GITHUB_CONFIG_PATH = '_live-config.json';
+
+async function githubSaveConfig(config) {
+    const token = localStorage.getItem(GITHUB_TOKEN_KEY);
+    const repo = localStorage.getItem(GITHUB_REPO_KEY);
+    if (!token || !repo) return false;
+
+    const apiUrl = `https://api.github.com/repos/${repo}/contents/${GITHUB_CONFIG_PATH}`;
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify(config, null, 2))));
+
+    try {
+        // 先获取文件的 SHA（如果存在）
+        let sha = null;
+        const getRes = await fetch(apiUrl, {
+            headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github.v3+json' }
+        });
+        if (getRes.ok) {
+            const existing = await getRes.json();
+            sha = existing.sha;
+        }
+
+        // 提交新内容
+        const body = { message: '更新网站配置 [自动]', content, sha };
+        const putRes = await fetch(apiUrl, {
+            method: 'PUT',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Accept': 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+        return putRes.ok;
+    } catch (_) { return false; }
 }
 
 function applyDefaultCoverToSongs() {
@@ -133,6 +172,29 @@ async function fetchServerConfig() {
     } catch (_) { /* 服务端不可用，用 localStorage */ }
 }
 
+// 从 GitHub raw 拉取 _live-config.json（GitHub Pages 全设备共享）
+async function fetchGitHubConfig() {
+    const repo = localStorage.getItem(GITHUB_REPO_KEY);
+    if (!repo) return;
+    const url = `https://raw.githubusercontent.com/${repo}/main/${GITHUB_CONFIG_PATH}`;
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch(url + '?_=' + Date.now(), { signal: controller.signal });
+        clearTimeout(timer);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.style) {
+            applyStyleConfig(data.style);
+            localStorage.setItem(STYLE_CONFIG_KEY, JSON.stringify(data.style));
+        }
+        if (data.site) {
+            applySiteConfig(data.site);
+            localStorage.setItem(SITE_CONFIG_KEY, JSON.stringify(data.site));
+        }
+    } catch (_) { /* 忽略 */ }
+}
+
 async function init() {
     setupTheme();
     setupAdmin();
@@ -162,6 +224,8 @@ async function init() {
             }
         }
     } catch (_) {}
+    // 从 GitHub raw 拉取 _live-config.json（GitHub Pages 全设备共享）
+    await fetchGitHubConfig();
     // 从服务端拉取（本地运行 server.js 时生效）
     await fetchServerConfig();
     // 加载歌曲
@@ -354,6 +418,10 @@ function setupAdmin() {
             } catch (_) {}
         }
         document.getElementById('adminNewPassword').value = '';
+        const ghToken = localStorage.getItem(GITHUB_TOKEN_KEY);
+        if (ghToken) document.getElementById('githubToken').value = ghToken;
+        const ghRepo = localStorage.getItem(GITHUB_REPO_KEY);
+        if (ghRepo) document.getElementById('githubRepo').value = ghRepo;
         settingsStatus.textContent = '';
     }
 
@@ -391,6 +459,11 @@ function setupAdmin() {
             localStorage.setItem(ADMIN_KEY, btoa(newPass));
             document.getElementById('adminNewPassword').value = '';
         }
+        // 保存 GitHub Token / 仓库名
+        const ghToken = document.getElementById('githubToken').value.trim();
+        const ghRepo = document.getElementById('githubRepo').value.trim();
+        if (ghToken) localStorage.setItem(GITHUB_TOKEN_KEY, ghToken);
+        if (ghRepo) localStorage.setItem(GITHUB_REPO_KEY, ghRepo);
 
         // Re-apply default cover
         applyDefaultCoverToSongs();
@@ -402,8 +475,8 @@ function setupAdmin() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ site: sc, style: st })
         }).catch(() => {});
-        // 上传到 WebDAV（GitHub Pages 环境下所有设备共享）
-        webdavPut('_config.json', { site: sc, style: st }).catch(() => {});
+        // 保存到 GitHub 仓库（GitHub Pages 环境下全设备共享）
+        githubSaveConfig({ site: sc, style: st });
 
         settingsStatus.textContent = '设置已保存';
         settingsStatus.className = 'form-status';
