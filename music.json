@@ -20,6 +20,11 @@
     "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E7%AD%94%E6%A1%88-%E5%BE%A1%E7%8C%AB.mp3"
   },
   {
+    "name": "到此为止",
+    "artist": "御猫",
+    "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E5%88%B0%E6%AD%A4%E4%B8%BA%E6%AD%A2-%E5%BE%A1%E7%8C%AB.mp3"
+  },
+  {
     "name": "故梦",
     "artist": "御猫",
     "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E6%95%85%E6%A2%A6-%E5%BE%A1%E7%8C%AB.mp3"
@@ -35,14 +40,34 @@
     "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E6%83%8A%E9%B8%BF%E4%B8%80%E9%9D%A2-%E5%BE%A1%E7%8C%AB.mp3"
   },
   {
+    "name": "老男孩",
+    "artist": "御猫",
+    "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E8%80%81%E7%94%B7%E5%AD%A9-%E5%BE%A1%E7%8C%AB.mp3"
+  },
+  {
     "name": "临江仙",
     "artist": "御猫",
     "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E4%B8%B4%E6%B1%9F%E4%BB%99-%E5%BE%A1%E7%8C%AB.mp3"
   },
   {
+    "name": "慢慢喜欢你1",
+    "artist": "御猫",
+    "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E6%85%A2%E6%85%A2%E5%96%9C%E6%AC%A2%E4%BD%A01-%E5%BE%A1%E7%8C%AB.mp3"
+  },
+  {
+    "name": "慢慢喜欢你2",
+    "artist": "御猫",
+    "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E6%85%A2%E6%85%A2%E5%96%9C%E6%AC%A2%E4%BD%A02-%E5%BE%A1%E7%8C%AB.mp3"
+  },
+  {
     "name": "你是我的眼",
     "artist": "御猫",
     "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E4%BD%A0%E6%98%AF%E6%88%91%E7%9A%84%E7%9C%BC-%E5%BE%A1%E7%8C%AB.mp3"
+  },
+  {
+    "name": "偏爱",
+    "artist": "御猫",
+    "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E5%81%8F%E7%88%B1-%E5%BE%A1%E7%8C%AB.mp3"
   },
   {
     "name": "牵丝戏1",
@@ -90,6 +115,11 @@
     "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E5%A4%A9%E8%B5%8B3-%E5%BE%A1%E7%8C%AB.mp3"
   },
   {
+    "name": "天龙八部之宿敌",
+    "artist": "御猫",
+    "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E5%A4%A9%E9%BE%99%E5%85%AB%E9%83%A8%E4%B9%8B%E5%AE%BF%E6%95%8C-%E5%BE%A1%E7%8C%AB.mp3"
+  },
+  {
     "name": "跳楼机",
     "artist": "御猫",
     "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E8%B7%B3%E6%A5%BC%E6%9C%BA-%E5%BE%A1%E7%8C%AB.mp3"
@@ -128,6 +158,11 @@
     "name": "想你的夜",
     "artist": "御猫",
     "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E6%83%B3%E4%BD%A0%E7%9A%84%E5%A4%9C-%E5%BE%A1%E7%8C%AB.mp3"
+  },
+  {
+    "name": "心愿便利贴",
+    "artist": "御猫",
+    "url": "https://cdn.jsdelivr.net/gh/Pi3-14-15926/WebMusic/music/%E5%BF%83%E6%84%BF%E4%BE%BF%E5%88%A9%E8%B4%B4-%E5%BE%A1%E7%8C%AB.mp3"
   },
   {
     "name": "悬崖",
